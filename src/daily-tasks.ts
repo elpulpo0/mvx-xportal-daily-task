@@ -24,23 +24,30 @@ import { DailyInfo } from './types/dailyInfo.types';
 import { handleAxiosError } from './utils/errorHandler';
 
 async function waitWithCountdown(delayMs: number) {
-    const remainingSeconds = Math.floor(delayMs / 1000);
-    let secondsLeft = remainingSeconds;
+    const endTime = Date.now() + delayMs;
+    const nextExecution = moment(endTime);
 
     const logFn = isRunningInDocker()
         ? (msg: string) => log.info(msg)
         : (msg: string) => process.stdout.write(`\r${msg}`);
 
-    while (secondsLeft > 0) {
+    while (true) {
+        const now = Date.now();
+        const remainingMs = endTime - now;
+
+        if (remainingMs <= 0) break;
+
+        const secondsLeft = Math.ceil(remainingMs / 1000);
         const hours = Math.floor(secondsLeft / 3600);
         const minutes = Math.floor((secondsLeft % 3600) / 60);
         const seconds = secondsLeft % 60;
 
-        const message = `⏳ Time until next execution: ${hours}h ${minutes}m ${seconds}s`;
+        const message = `⏳ Next execution at ${nextExecution.format('DD/MM/YYYY HH:mm:ss')} (in ${hours}h ${minutes}m ${seconds}s)`;
+
         logFn(message);
 
-        await new Promise(r => setTimeout(r, 1000));
-        secondsLeft--;
+        const sleepTime = Math.min(1000, remainingMs);
+        await new Promise(r => setTimeout(r, sleepTime));
     }
 
     if (!isRunningInDocker()) {
@@ -49,14 +56,13 @@ async function waitWithCountdown(delayMs: number) {
 }
 
 async function processWalletLoop(walletJson: typeof wallets[0]) {
-    log.info(`Starting loop iteration for wallet ${walletJson.file}`);
     while (true) {
         try {
             const delayMs = await processWallet(walletJson);
             await waitWithCountdown(delayMs);
         } catch (err) {
             log.error("Error in processWalletLoop");
-            await new Promise(r => setTimeout(r, 60 * 1000));
+            await waitWithCountdown(60 * 1000);
         }
     }
 }
